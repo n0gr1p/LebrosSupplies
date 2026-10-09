@@ -1,6 +1,6 @@
 # LebrosSupplies (Windower 4)
 
-**v0.3.0 — single-coordinator feeding prototype**
+**v0.3.1 — single-coordinator feeding prototype**
 
 All six clients load the addon. One explicitly named character coordinates; other clients report sightings and food stock and execute only addressed feeding jobs.
 
@@ -19,7 +19,7 @@ Replace Terrasjr with whichever character you want coordinating. **Coordinator s
 
 Target an Imperial Stormer and type `//lsup 2` to confirm the targeted soldier belongs to a two-soldier group, or `//lsup 3` for a three-soldier group. This sends its **server ID** and the player-confirmed group size to the coordinator over IPC. The marker is not keyed by NPC name and resets when zoning. Use `//lsup plan` to view all confirmed markers and assignments.
 
-**No automatic feeding is issued to unmarked soldiers.** Seafood Stewpots are reserved for explicitly marked 3-member groups, not spatially guessed ones. A marker applies to the targeted soldier ID only. The other soldiers in a group can be marked individually when approached.
+**No automatic feeding is issued to unmarked soldiers.** Seafood Stewpots are reserved for explicitly marked 3-member groups, not spatially guessed ones, **until two distinct three-member groups have received a confirmed stewpot consumption**. After that, the coordinator releases remaining stewpots for explicitly marked two-member groups. It derives a stable sorted triple of nearby soldier server IDs to ensure a repeated interaction in the same group cannot count as the second group. Incomplete or ambiguous three-soldier sightings do not unlock the reserve. A marker applies to the targeted soldier ID only. The other soldiers in a group can be marked individually when approached.
 
 ## Operation
 
@@ -56,3 +56,7 @@ The last two bookkeeping commands remain manual for confirmed dialogue. Use `rec
 - Unknown server food-selection behavior is a hard stop for mixed inventories.
 
 Code: `LebrosSupplies.lua`.
+
+### Stewpot priority state
+
+Run `//lsup plan` on the coordinator to see `3-group stewpots 0/2`, `1/2`, or `2/2` and whether the reserve is unlocked. This records two **distinct group-level consumption events**, not proven satisfaction of every soldier; the addon does not claim that inventory reduction proves NPC satisfaction. All state resets when zoning.
