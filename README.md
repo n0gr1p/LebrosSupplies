@@ -86,3 +86,7 @@ The in-game layout uses **three Windower `texts` objects**, not one giant concat
 ### Assignment handoff fix (v0.6.2)
 
 Fixed an IPC parser offset: a worker assignment is `lebrosc|assign|worker|job|NPC id|NPC index|food`, and the worker now reads fields 3-7 rather than 2-6. The coordinator also checks that a soldier has not already received a job during the current candidate iteration. When a worker rejects a scoped assignment, it logs the actual reason (NPC not visible, index mismatch, range, food not detected, or mixed food). An empty/undetected temporary-food inventory still prevents feeding; this is independent of the IPC fix.
+
+### Repeat partial feeds (v0.6.3)
+
+After a worker confirms that food was consumed, the coordinator releases that soldier for another assignment after a two-second cooldown **if their cumulative feeding ledger remains below 7 points**. Only `completed` jobs become eligible again; `assigned` and `uncertain` jobs stay blocked to avoid duplicate interactions. A worker cannot receive overlapping active assignments. A soldier with confirmed `full` status is skipped regardless of estimated points. Feeding points remain estimates from confirmed item consumption, not independently verified NPC satisfaction.
