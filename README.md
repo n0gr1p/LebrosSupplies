@@ -1,6 +1,6 @@
 # LebrosSupplies (Windower 4)
 
-**v0.3.1 — single-coordinator feeding prototype**
+**v0.3.2 — single-coordinator feeding prototype**
 
 All six clients load the addon. One explicitly named character coordinates; other clients report sightings and food stock and execute only addressed feeding jobs.
 
@@ -60,3 +60,7 @@ Code: `LebrosSupplies.lua`.
 ### Stewpot priority state
 
 Run `//lsup plan` on the coordinator to see `3-group stewpots 0/2`, `1/2`, or `2/2` and whether the reserve is unlocked. This records two **distinct group-level consumption events**, not proven satisfaction of every soldier; the addon does not claim that inventory reduction proves NPC satisfaction. All state resets when zoning.
+
+### Strict three-soldier stewpot priority (v0.3.2)
+
+Until the coordinator has confirmed stewpot consumption for **both** distinct three-soldier groups, it **will not assign ordinary food to soldiers marked `//lsup 3`**. Their priority is stewpot-first, even if another character with ordinary food is closer. Once the two priority deliveries have happened, remaining stewpot stock can be assigned to marked two-soldier groups. If no stewpot is available, the marked three-soldier group waits instead of consuming ordinary provisions.
