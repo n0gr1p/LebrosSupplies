@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.7.0'
+_addon.version = '0.7.1'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -277,7 +277,7 @@ local last_report = -100
 local last_schedule = -100
 local seq = 0
 local job_cooldown = {} -- brief per-NPC delay after a confirmed delivery
-local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
+local marked_groups = {} -- soldier server ID -> player-confirmed group size (1, 2 or 3)
 local marked_by = {}
 local stew_groups_fed = {} -- unique 3-soldier spatial groups with confirmed stew consumption
 windower.register_event('zone change',function()
@@ -388,7 +388,7 @@ local function coordinate()
   end
   if not assigned[v.worker] and not worker_busy and ready then
    -- Explicit player group classification is required for EVERY assignment.
-   -- Never spend stewpots on two-soldier groups or inferred group size.
+   -- Preserve stewpots for marked three-soldier groups until both priority deliveries.
    local stew=v.food=='seafood stewpot'
    local group_key=stew and three_group_key(v.s) or nil
    local priority_done=stew_group_count()>=2
@@ -399,7 +399,7 @@ local function coordinate()
     end
    end
    local ordinary_blocked=priority_pending and marked_groups[v.s.id]==3 and not stew
-   local permitted=(not stew and not ordinary_blocked) or (priority_done and marked_groups[v.s.id]==2)
+   local permitted=(not stew and not ordinary_blocked) or (priority_done and (marked_groups[v.s.id]==1 or marked_groups[v.s.id]==2))
      or (not priority_done and marked_groups[v.s.id]==3 and group_key and not stew_groups_fed[group_key])
    if marked_groups[v.s.id] and permitted and not group_busy then
     local id=next_job_id next_job_id=next_job_id+1
@@ -528,7 +528,7 @@ windower.register_event('ipc message',function(message)
   sightings[norm(a[3])]={time=os.clock(),mobs=mobs}
  elseif a[2]=='mark' then
   local id,size,who=tonumber(a[3]),tonumber(a[4]),norm(a[5])
-  if id and (size==2 or size==3) then
+  if id and (size==1 or size==2 or size==3) then
    marked_groups[id]=size
    group_marks[id]=size
    marked_by[id]=who
@@ -590,7 +590,7 @@ windower.register_event('addon command',function(cmd,name)
    if not restock.enabled then restock.waiting=false end
    log('Automatic Yazuhma restock '..(restock.enabled and 'enabled.' or 'disabled.'))
   else log('Usage: //lsup restock on|off') end
- elseif cmd=='2' or cmd=='3' then
+ elseif cmd=='1' or cmd=='2' or cmd=='3' then
   local s=selected()
   if not s then
    log('Target an Imperial Stormer first; //lsup '..cmd)
