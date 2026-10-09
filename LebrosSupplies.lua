@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.7.1'
+_addon.version = '0.7.2'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -318,7 +318,7 @@ local function coordinator_candidates()
     -- Don't silently gamble the scarce temporary provisions.
     local fed=(ledger[s.id] and ledger[s.id].points) or 0
     local active=jobs[s.id]
-    local available=not active or (active.state=='completed' and os.clock()-(job_cooldown[s.id] or 0)>=2)
+    local available=not active or ((active.state=='completed' or active.state=='retryable') and os.clock()-(job_cooldown[s.id] or 0)>=2)
     if kinds==1 and marked_groups[s.id] and not (soldiers[s.id] and soldiers[s.id].full)
       and fed<7 and available and s.range<=4.5 then
      candidates[#candidates+1]={worker=worker,s=s,food=n}
@@ -381,7 +381,7 @@ local function coordinate()
  local assigned={}
  for _,v in ipairs(candidates) do
   local prev=jobs[v.s.id]
-  local ready=not prev or (prev.state=='completed' and os.clock()-(job_cooldown[v.s.id] or 0)>=2)
+  local ready=not prev or ((prev.state=='completed' or prev.state=='retryable') and os.clock()-(job_cooldown[v.s.id] or 0)>=2)
   local worker_busy=false
   for _,job in pairs(jobs) do
    if job.worker==v.worker and job.state=='assigned' then worker_busy=true;break end
@@ -411,7 +411,7 @@ local function coordinate()
   end
  end
  for id,j in pairs(jobs) do
-  if os.clock()-j.time>12 and j.state~='completed' then
+  if os.clock()-j.time>12 and j.state=='assigned' then
    -- Timed-out transactions are NOT retried automatically; server outcome unknown.
    j.state='uncertain'
   end
@@ -567,8 +567,16 @@ windower.register_event('ipc message',function(message)
     log('Fed NPC '..id..': '..entry.food..' +'..foods[entry.food]..
       ', total '..total..'/7'..
       (remaining>0 and ' - continue feeding.' or ' - estimated requirement met.'))
-   else entry.state='uncertain'
-    log('Assignment '..job..' unresolved on NPC '..id..': '..tostring(a[5]))
+   else
+    local reason=tostring(a[5] or 'unknown')
+    if reason=='out-of-range' or reason=='npc-not-visible' or reason=='index-mismatch' or reason=='worker-busy' then
+     entry.state='retryable'
+     job_cooldown[id]=os.clock()
+     log('Assignment '..job..' deferred on NPC '..id..': '..reason..'; retry when in range.')
+    else
+     entry.state='uncertain'
+     log('Assignment '..job..' unresolved on NPC '..id..': '..reason)
+    end
    end
   end
  end
