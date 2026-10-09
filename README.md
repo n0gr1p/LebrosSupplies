@@ -104,3 +104,7 @@ Target a lone Imperial Stormer and enter `//lsup 1` to mark that exact NPC serve
 ### Recover pre-interaction range failures (v0.7.2)
 
 If a worker rejects a coordinator assignment **before poking** because the soldier is out of range, not visible, has a changed index, or the worker is busy, the job becomes `retryable`. When an in-range worker is available again and the cooldown has passed, the coordinator may issue a fresh assignment. Jobs whose outcome may include food consumption (`no-inventory-change`, timed out after interaction) remain blocked as uncertain. Correcting the retry state does not clear group markings or per-soldier food points.
+
+### Stewpot preference, not requirement (v0.7.3)
+
+A three-soldier group receives priority for Seafood Stewpot **when a matching in-range worker can currently deliver one**. If no valid stewpot delivery is available, ordinary food is permitted immediately. This prevents group-three starvation when no stewpot is held or nearby. Existing two-group stewpot reservation and eventual release rules remain in place.
