@@ -1,6 +1,6 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.2.0'
-_addon.commands = {'lebrossupplies','lsupply'}
+_addon.version = '0.3.0'
+_addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
 local res = require('resources')
@@ -167,6 +167,8 @@ local next_job_id = 1
 local last_report = -100
 local last_schedule = -100
 local seq = 0
+local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
+local marked_by = {}
 local function norm(x) return tostring(x or ''):lower() end
 local function who_leads()
  return leader_name
@@ -199,7 +201,7 @@ local function coordinator_candidates()
     end
     -- If the worker has multiple food types, server selection order is unknown.
     -- Don't silently gamble the scarce temporary provisions.
-    if kinds==1 and not jobs[s.id] and s.range<=4.5 then
+    if kinds==1 and marked_groups[s.id] and not jobs[s.id] and s.range<=4.5 then
      candidates[#candidates+1]={worker=worker,s=s,food=n}
     end
    end
@@ -225,17 +227,17 @@ local function coordinate()
  if leader_name=='' or not is_coordinator() then return end
  local candidates=coordinator_candidates()
  table.sort(candidates,function(a,b)
-  local aa=(a.food=='seafood stewpot' and group_size_at(a.s)==3) and 100 or 0
-  local bb=(b.food=='seafood stewpot' and group_size_at(b.s)==3) and 100 or 0
+  local aa=(a.food=='seafood stewpot' and marked_groups[a.s.id]==3) and 100 or 0
+  local bb=(b.food=='seafood stewpot' and marked_groups[b.s.id]==3) and 100 or 0
   if aa~=bb then return aa>bb end
   return a.s.range<b.s.range
  end)
  local assigned={}
  for _,v in ipairs(candidates) do
   if not assigned[v.worker] then
-   local group=group_size_at(v.s)
-   -- Stewpots are strictly reserved for fully observed three-soldier clusters.
-   if v.food~='seafood stewpot' or group==3 then
+   -- Explicit player group classification is required for EVERY assignment.
+   -- Never spend stewpots on two-soldier groups or inferred group size.
+   if marked_groups[v.s.id] and (v.food~='seafood stewpot' or marked_groups[v.s.id]==3) then
     local id=next_job_id next_job_id=next_job_id+1
     jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned'}
     assigned[v.worker]=true
@@ -305,6 +307,13 @@ windower.register_event('ipc message',function(message)
    end
   end
   sightings[norm(a[3])]={time=os.clock(),mobs=mobs}
+ elseif a[2]=='mark' then
+  local id,size,who=tonumber(a[3]),tonumber(a[4]),norm(a[5])
+  if id and (size==2 or size==3) then
+   marked_groups[id]=size
+   marked_by[id]=who
+   if is_coordinator() then log('Player confirmed NPC '..id..' belongs to '..size..'-soldier group ('..who..')') end
+  end
  elseif a[2]=='assign' then accept_job(a)
  elseif (a[2]=='consumed' or a[2]=='fail') and is_coordinator() then
   local job,id=tonumber(a[3]),tonumber(a[4])
@@ -330,13 +339,25 @@ windower.register_event('prerender',function()
  if t-last_schedule>2 then last_schedule=t coordinate() end
 end)
 windower.register_event('addon command',function(cmd,name)
- if cmd=='coordinator' then
+ if cmd=='2' or cmd=='3' then
+  local s=selected()
+  if not s then
+   log('Target an Imperial Stormer first; //lsup '..cmd)
+   return
+  end
+  local size=tonumber(cmd)
+  marked_groups[s.id]=size
+  marked_by[s.id]=norm(identity())
+  send('mark|'..s.id..'|'..size..'|'..identity())
+  log('Marked soldier ID '..s.id..' as a member of a '..size..'-soldier group.')
+ elseif cmd=='coordinator' then
   if not name or name=='' then log('Usage: //lsupply coordinator <character|auto>') return end
   leader_name=name=='auto' and '' or norm(name)
   send('leader|'..leader_name)
   log('Coordinator '..who_leads())
  elseif cmd=='plan' then
-  log('Coordinator: '..who_leads()..' | active worker assignments:')
+  log('Coordinator: '..who_leads()..' | confirmed group markers and assignments:')
+  for id,size in pairs(marked_groups) do log(id..' -> '..size..'-soldier group ('..tostring(marked_by[id])..')') end
   for id,j in pairs(jobs) do log(id..' -> '..j.worker..' ('..j.state..')') end
  end
 end)
