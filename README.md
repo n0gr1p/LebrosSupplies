@@ -1,6 +1,6 @@
 # LebrosSupplies (Windower 4)
 
-**v0.3.2 — single-coordinator feeding prototype**
+**v0.4.0 — single-coordinator feeding prototype**
 
 All six clients load the addon. One explicitly named character coordinates; other clients report sightings and food stock and execute only addressed feeding jobs.
 
@@ -64,3 +64,9 @@ Run `//lsup plan` on the coordinator to see `3-group stewpots 0/2`, `1/2`, or `2
 ### Strict three-soldier stewpot priority (v0.3.2)
 
 Until the coordinator has confirmed stewpot consumption for **both** distinct three-soldier groups, it **will not assign ordinary food to soldiers marked `//lsup 3`**. Their priority is stewpot-first, even if another character with ordinary food is closer. Once the two priority deliveries have happened, remaining stewpot stock can be assigned to marked two-soldier groups. If no stewpot is available, the marked three-soldier group waits instead of consuming ordinary provisions.
+
+### Coordinator poke-and-accept (v0.4.0)
+
+For each approved feeding assignment, the worker sends one NPC poke (outgoing `0x01A`). It accepts **only** incoming NPC menu packets (`0x032`, `0x033`, `0x034`) matching that assigned soldier's server ID and index, using the packet's actual zone/menu IDs and outgoing `0x05B`. The current default dialogue option index is `0`; **the correct Lebros acceptance option is not yet independently verified**. Change it on every worker if necessary with `//lsup option <0-255>`. A worker waits for temporary-food consumption and reports that outcome to the coordinator. It never repeats an unresolved interaction automatically. No unrelated NPC menu is accepted.
+
+This is an in-game integration prototype. Although the packet structures are documented, the Lebros-specific menu option and temporary-food inventory representation remain unverified. Keep normal gameplay controls available when first running it.
