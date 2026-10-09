@@ -70,3 +70,7 @@ Until the coordinator has confirmed stewpot consumption for **both** distinct th
 An Imperial Stormer does **not** open a choice menu. The assigned worker sends one NPC interaction (poke), waits for the game dialogue and temporary-food inventory decrease, then reports confirmed consumption to the coordinator. No outgoing `0x05B` menu response or option index is sent. An unresolved attempt remains unresolved; it is not retried automatically.
 
 The feeding code has not yet been live-tested. In particular, the temporary-item container exposed by the client's Windower build still needs to be verified during normal play.
+
+### Party-wide food HUD (v0.5.2)
+
+The HUD shows each party member individually in party order, including the coordinator. Stock reports refresh via IPC. Each row lists held food types and quantities, **EMPTY - RESTOCK** for a recent report with no recognized temporary provisions, or **NO RECENT REPORT** when a member has not reported in eight seconds (including newly loaded clients). This distinguishes zero food from missing telemetry. Group and target progress remain visible above the food rows. Item visibility depends on the Windower temporary-item API; unrecognized temporary food can falsely appear as empty and needs an in-game check.
