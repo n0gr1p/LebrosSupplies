@@ -1,11 +1,24 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.5.4'
+_addon.version = '0.6.0'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
 local res = require('resources')
 local settings = config.load({radius=6,ui={pos={x=100,y=100},text={font='Arial',size=11,red=255,green=255,blue=255,alpha=255},bg={visible=true,alpha=170,red=0,green=0,blue=0},flags={draggable=true}}})
-local view = texts.new('LEBROS  ${known}\n${target}\n${groups}\n-- PROVISIONS --\n${food}',settings.ui)
+-- Windower texts objects don't support HTML layout. Use three positioned layers.
+local function style(x,y,size,red,green,blue,bg)
+ return {pos={x=x,y=y}, text={font='Arial',size=size or 11,alpha=255,
+  red=red or 255,green=green or 255,blue=blue or 255},
+  bg={visible=bg==true,alpha=195,red=15,green=21,blue=31},
+  flags={draggable=false,bold=false}}
+end
+local origin_x=settings.ui.pos.x or 100
+local origin_y=settings.ui.pos.y or 100
+local panel=texts.new('',style(origin_x,origin_y,11,233,240,252,true))
+local names=texts.new('',style(origin_x+12,origin_y+124,10,210,223,240,false))
+local amounts=texts.new('',style(origin_x+172,origin_y+124,10,143,219,192,false))
+local function hide_hud() panel:hide();names:hide();amounts:hide() end
+
 local soldiers,groups,inventory = {},{},{}
 local stock_seen = {}
 local stock_known = {}
@@ -85,59 +98,67 @@ local function selected()
  return m and m.name=='Imperial Stormer' and soldiers[m.id] or nil
 end
 local function draw()
- local n,full=0,0
- for _,s in pairs(soldiers) do n=n+1 if s.full then full=full+1 end end
- local gl={}
- for key,g in pairs(groups) do gl[#gl+1]=tostring(key)..':'..g.size..(g.valid and '' or '?') end
- table.sort(gl)
- local stock={}
+ local total,full=0,0
+ for _,soldier in pairs(soldiers) do
+  total=total+1
+  if soldier.full then full=full+1 end
+ end
  local roster,listed={},{}
  local party=windower.ffxi.get_party() or {}
  for i=0,5 do
   local p=party['p'..i]
   if p and p.name then
    local name=p.name:lower()
-   if not listed[name] then roster[#roster+1]=name; listed[name]=true end
+   if not listed[name] then
+    roster[#roster+1]=name
+    listed[name]=true
+   end
   end
  end
  for who in pairs(inventory) do
-  if not listed[who] then roster[#roster+1]=who; listed[who]=true end
+  if not listed[who] then roster[#roster+1]=who;listed[who]=true end
  end
+ local name_lines,value_lines={},{}
  for _,who in ipairs(roster) do
+  local label='NO REPORT'
   local items=inventory[who]
   local age=stock_seen[who] and (os.clock()-stock_seen[who]) or math.huge
-  local label
-  if not items or age>8 then label='OFFLINE / STALE'
-  elseif stock_known[who]==false then label='TEMP ITEMS UNKNOWN'
-  else
-   local entries,total={},0
-   local ordered={'seafood stewpot','bison steak','coeurl sub','bison jerky','pea soup','white bread'}
-   local short={['seafood stewpot']='Stew',['bison steak']='Steak',['coeurl sub']='Sub',['bison jerky']='Jerky',['pea soup']='Soup',['white bread']='Bread'}
-   for _,food in ipairs(ordered) do
-    local count=items[food] or 0
-    if count>0 then
-     total=total+count
-     entries[#entries+1]=short[food]..':'..count
+  if items and age<=8 then
+   if stock_known[who]==false then label='UNKNOWN'
+   else
+    local ordered={'seafood stewpot','bison steak','coeurl sub','bison jerky','pea soup','white bread'}
+    local short={['seafood stewpot']='Stew',['bison steak']='Steak',['coeurl sub']='Sub',
+     ['bison jerky']='Jerky',['pea soup']='Soup',['white bread']='Bread'}
+    local vals={}
+    for _,food in ipairs(ordered) do
+     if (items[food] or 0)>0 then vals[#vals+1]=short[food]..' x'..items[food] end
     end
+    label=#vals==0 and 'VERIFY STOCK' or table.concat(vals,', ')
    end
-   label=total==0 and 'RESTOCK / VERIFY' or table.concat(entries,'  ')
   end
-  stock[#stock+1]=string.format('%-17s %s',who,label)
+  name_lines[#name_lines+1]=who
+  value_lines[#value_lines+1]=label
  end
+ local target='No soldier targeted'
  local s=selected()
- local target_text='none'
  if s then
-  local g=groups[s.group]
   local mark=group_marks[s.id]
-  local value=(ledger[s.id] and ledger[s.id].points) or s.points or 0
-  local group_text=mark and ('GROUP '..mark) or 'UNMARKED'
-  target_text=tostring(s.id)..' '..string.format('%.1fy',s.range)..' | '..group_text
-    ..' | Fed '..value..'/7'..(s.full and ' FULL' or '')
-  if mark==3 then target_text=target_text..' | STEWPOT FIRST' end
+  local size=mark and ('GROUP '..mark) or 'UNMARKED'
+  local points=(ledger[s.id] and ledger[s.id].points) or s.points or 0
+  target='ID '..tostring(s.id)..'  '..size..'  '..tostring(points)..'/7 fed'
  end
- view:update({known=n..'/12, confirmed full '..full,target=target_text,groups=(#gl>0 and ('Clusters: '..table.concat(gl,' ')) or ''),food=table.concat(stock,'\n')})
- view:show()
+ panel:text('LEBROS SUPPLIES                         '..full..'/12 full\n'
+  ..'---------------------------------------------\n'
+  ..'TARGET  '..target..'\n'
+  ..'Known soldiers: '..total..'/12\n'
+  ..'---------------------------------------------\n'
+  ..'PROVISIONS\n'
+  ..string.rep('\n',#name_lines+1))
+ names:text(table.concat(name_lines,'\n'))
+ amounts:text(table.concat(value_lines,'\n'))
+ panel:show();names:show();amounts:show()
 end
+
 local function add_feed_event(key, food, ids)
  if applied_events[key] or not foods[food] then return end
  applied_events[key]=true
@@ -197,9 +218,9 @@ windower.register_event('prerender',function()
 end)
 windower.register_event('zone change',function()
  soldiers,groups,inventory,ledger,applied_events,group_marks,stock_seen,stock_known={},{},{},{},{},{},{},{}
- view:hide()
+ hide_hud()
 end)
-windower.register_event('unload',function() view:hide() end)
+windower.register_event('unload',function() hide_hud() end)
 windower.register_event('addon command',function(cmd,...)
  local args={...}
  cmd=(cmd or 'status'):lower()
