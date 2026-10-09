@@ -100,3 +100,7 @@ The stock scanner must detect temporary items for the retry loop to know when to
 ### Solo soldier classification (v0.7.1)
 
 Target a lone Imperial Stormer and enter `//lsup 1` to mark that exact NPC server ID as a **solo soldier**. Like `//lsup 2` and `//lsup 3`, this is sent to the coordinator over IPC and displayed as `GROUP 1` in the target HUD. Solo soldiers receive ordinary food while the two three-soldier stewpot reservations remain outstanding. Once both priority three-person groups have consumed stewpots, remaining stewpots may also be used on solo soldiers. The food-point ledger and retry rules remain per soldier.
+
+### Recover pre-interaction range failures (v0.7.2)
+
+If a worker rejects a coordinator assignment **before poking** because the soldier is out of range, not visible, has a changed index, or the worker is busy, the job becomes `retryable`. When an in-range worker is available again and the cooldown has passed, the coordinator may issue a fresh assignment. Jobs whose outcome may include food consumption (`no-inventory-change`, timed out after interaction) remain blocked as uncertain. Correcting the retry state does not clear group markings or per-soldier food points.
