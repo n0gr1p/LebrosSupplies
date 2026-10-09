@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.6.4'
+_addon.version = '0.7.0'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -449,6 +449,52 @@ local function accept_job(args)
  }))
  log('Coordinator requested interaction with '..id..' ('..food..')')
 end
+-- Restock only when the player has returned within range of Yazuhma.
+-- An unsuccessful poke is not a failed restock: Yazuhma has a dispense delay.
+local restock={enabled=true,last_poke=-100,attempts=0,waiting=false}
+local restock_interval=5
+local function total_food(stock)
+ local total=0
+ for food,n in pairs(stock or {}) do if foods[food] then total=total+(tonumber(n) or 0) end end
+ return total
+end
+local function restock_tick()
+ if not restock.enabled or pending_job then return end
+ local stock=inventory[identity():lower()]
+ if stock_known[identity():lower()]~=true then return end
+ if total_food(stock)>0 then
+  if restock.waiting then
+   log('Restock received from Yazuhma; feeding available.')
+   restock.waiting=false
+  end
+  restock.attempts=0
+  return
+ end
+ local target=nil
+ for _,mob in pairs(windower.ffxi.get_mob_array() or {}) do
+  if mob and mob.name=='Yazuhma' and mob.id and mob.index and mob.valid_target then
+   local range=mob.distance and math.sqrt(mob.distance) or 999
+   if range<=4.5 then target=mob break end
+  end
+ end
+ if not target then
+  restock.waiting=false
+  return
+ end
+ if os.clock()-restock.last_poke<restock_interval then return end
+ local ok,pk=pcall(require,'packets')
+ if not ok then log('Restock unavailable: packets library missing.') return end
+ local sent,err=pcall(function()
+  pk.inject(pk.new('outgoing',0x01A,{
+   ['Target']=target.id,['Target Index']=target.index,['Category']=0,['Param']=0
+  }))
+ end)
+ if not sent then log('Restock poke failed: '..tostring(err)) return end
+ restock.last_poke=os.clock()
+ restock.attempts=restock.attempts+1
+ restock.waiting=true
+ if restock.attempts==1 then log('Requesting food from Yazuhma; will retry every 5s until supplied.') end
+end
 local function check_pending()
  if not pending_job then return end
  local j=pending_job
@@ -533,11 +579,18 @@ windower.register_event('prerender',function()
   last_report=t
   report_visible()
   check_pending()
+  restock_tick()
  end
  if t-last_schedule>2 then last_schedule=t coordinate() end
 end)
 windower.register_event('addon command',function(cmd,name)
- if cmd=='2' or cmd=='3' then
+ if cmd=='restock' then
+  if name=='on' or name=='off' then
+   restock.enabled=name=='on'
+   if not restock.enabled then restock.waiting=false end
+   log('Automatic Yazuhma restock '..(restock.enabled and 'enabled.' or 'disabled.'))
+  else log('Usage: //lsup restock on|off') end
+ elseif cmd=='2' or cmd=='3' then
   local s=selected()
   if not s then
    log('Target an Imperial Stormer first; //lsup '..cmd)
