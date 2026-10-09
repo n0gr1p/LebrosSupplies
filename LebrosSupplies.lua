@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.3.0'
+_addon.version = '0.3.1'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -169,8 +169,9 @@ local last_schedule = -100
 local seq = 0
 local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
 local marked_by = {}
+local stew_groups_fed = {} -- unique 3-soldier spatial groups with confirmed stew consumption
 windower.register_event('zone change',function()
- marked_groups,marked_by,jobs,sightings={}, {}, {}, {}
+ marked_groups,marked_by,jobs,sightings,stew_groups_fed={}, {}, {}, {}, {}
  pending_job=nil
 end)
 local function norm(x) return tostring(x or ''):lower() end
@@ -227,6 +228,29 @@ local function group_size_at(s)
  end
  return n
 end
+
+local function three_group_key(s)
+ -- Use live merged mob sightings to identify exactly three nearby IDs.
+ -- Never count the same 3-person cluster twice under different target IDs.
+ local nearby,seen={},{}
+ for _,snap in pairs(sightings) do
+  if os.clock()-snap.time<5 then
+   for id,m in pairs(snap.mobs) do
+    local dx,dy,dz=m.x-s.x,m.y-s.y,m.z-s.z
+    if dx*dx+dy*dy+dz*dz<=settings.radius*settings.radius then seen[id]=true end
+   end
+  end
+ end
+ for id in pairs(seen) do nearby[#nearby+1]=id end
+ if #nearby~=3 then return nil end
+ table.sort(nearby)
+ return table.concat(nearby,',')
+end
+local function stew_group_count()
+ local n=0
+ for _ in pairs(stew_groups_fed) do n=n+1 end
+ return n
+end
 local function coordinate()
  if leader_name=='' or not is_coordinator() then return end
  local candidates=coordinator_candidates()
@@ -241,9 +265,14 @@ local function coordinate()
   if not assigned[v.worker] then
    -- Explicit player group classification is required for EVERY assignment.
    -- Never spend stewpots on two-soldier groups or inferred group size.
-   if marked_groups[v.s.id] and (v.food~='seafood stewpot' or marked_groups[v.s.id]==3) then
+   local stew=v.food=='seafood stewpot'
+   local group_key=stew and three_group_key(v.s) or nil
+   local priority_done=stew_group_count()>=2
+   local permitted=not stew or (priority_done and marked_groups[v.s.id]==2)
+     or (not priority_done and marked_groups[v.s.id]==3 and group_key and not stew_groups_fed[group_key])
+   if marked_groups[v.s.id] and permitted then
     local id=next_job_id next_job_id=next_job_id+1
-    jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned'}
+    jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned',food=v.food,group_key=group_key}
     assigned[v.worker]=true
     send(table.concat({'assign',v.worker,id,v.s.id,v.s.index,v.food},'|'))
     log('Assign '..v.worker..' -> NPC '..v.s.id..' ('..v.food..')')
@@ -325,6 +354,11 @@ windower.register_event('ipc message',function(message)
   if entry and entry.job==job then
    if a[2]=='consumed' then
     entry.state='completed'
+    if entry.food=='seafood stewpot' and entry.group_key and not stew_groups_fed[entry.group_key] then
+     stew_groups_fed[entry.group_key]=true
+     log('Three-soldier group stewpot deliveries: '..stew_group_count()..'/2')
+     if stew_group_count()==2 then log('Stewpot reserve released: two-soldier groups now eligible.') end
+    end
     -- This proves consumption, not satisfaction or AoE group completion.
     log('Food consumed on NPC '..id..'; satisfaction unconfirmed.')
    else entry.state='uncertain'
@@ -360,7 +394,7 @@ windower.register_event('addon command',function(cmd,name)
   send('leader|'..leader_name)
   log('Coordinator '..who_leads())
  elseif cmd=='plan' then
-  log('Coordinator: '..who_leads()..' | confirmed group markers and assignments:')
+  log('Coordinator: '..who_leads()..' | 3-group stewpots '..stew_group_count()..'/2 | unlocked='..tostring(stew_group_count()>=2))
   for id,size in pairs(marked_groups) do log(id..' -> '..size..'-soldier group ('..tostring(marked_by[id])..')') end
   for id,j in pairs(jobs) do log(id..' -> '..j.worker..' ('..j.state..')') end
  end
