@@ -154,7 +154,7 @@ windower.register_event('addon command',function(cmd,...)
   else log('Target a soldier first') end
  else log('//lsupply status|inspect|record <food name>|full|radius <yalms>') end
 end)
-log('Coordinator-assisted feeding enabled (one-food-type workers only).')
+log('Coordinator mode available. Choose leader with //lsupply coordinator <character>.')
 
 
 -- Coordinator protocol v0.2.0. Only the coordinator issues assignments.
@@ -169,10 +169,7 @@ local last_schedule = -100
 local seq = 0
 local function norm(x) return tostring(x or ''):lower() end
 local function who_leads()
- if leader_name ~= '' then return leader_name end
- local party=windower.ffxi.get_party() or {}
- local p=party.p0
- return p and norm(p.name) or norm(identity())
+ return leader_name
 end
 local function is_coordinator() return norm(identity())==who_leads() end
 local function send(s) windower.send_ipc_message('lebrosc|'..s) end
@@ -225,7 +222,7 @@ local function group_size_at(s)
  return n
 end
 local function coordinate()
- if not is_coordinator() then return end
+ if leader_name=='' or not is_coordinator() then return end
  local candidates=coordinator_candidates()
  table.sort(candidates,function(a,b)
   local aa=(a.food=='seafood stewpot' and group_size_at(a.s)==3) and 100 or 0
@@ -255,7 +252,7 @@ local function coordinate()
  end
 end
 local function accept_job(args)
- if norm(args[2])~=norm(identity()) then return end
+ if leader_name=='' or norm(args[2])~=norm(identity()) then return end
  local job,id,index,food=tonumber(args[3]),tonumber(args[4]),tonumber(args[5]),args[6]
  if not job or not id or not index or not foods[food] or pending_job then return end
  local found=windower.ffxi.get_mob_by_id(id)
