@@ -268,9 +268,15 @@ local function coordinate()
    local stew=v.food=='seafood stewpot'
    local group_key=stew and three_group_key(v.s) or nil
    local priority_done=stew_group_count()>=2
+   local group_busy=false
+   if stew and group_key then
+    for _,j in pairs(jobs) do
+     if j.group_key==group_key then group_busy=true break end
+    end
+   end
    local permitted=not stew or (priority_done and marked_groups[v.s.id]==2)
      or (not priority_done and marked_groups[v.s.id]==3 and group_key and not stew_groups_fed[group_key])
-   if marked_groups[v.s.id] and permitted then
+   if marked_groups[v.s.id] and permitted and not group_busy then
     local id=next_job_id next_job_id=next_job_id+1
     jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned',food=v.food,group_key=group_key}
     assigned[v.worker]=true
