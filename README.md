@@ -90,3 +90,9 @@ Fixed an IPC parser offset: a worker assignment is `lebrosc|assign|worker|job|NP
 ### Repeat partial feeds (v0.6.3)
 
 After a worker confirms that food was consumed, the coordinator releases that soldier for another assignment after a two-second cooldown **if their cumulative feeding ledger remains below 7 points**. Only `completed` jobs become eligible again; `assigned` and `uncertain` jobs stay blocked to avoid duplicate interactions. A worker cannot receive overlapping active assignments. A soldier with confirmed `full` status is skipped regardless of estimated points. Feeding points remain estimates from confirmed item consumption, not independently verified NPC satisfaction.
+
+### Automatic Yazuhma restocking (v0.7.0)
+
+The addon automatically requests provisions from **Yazuhma** when a character returns within 4.5 yalms carrying no recognized food. If Yazuhma is still on her dispense cooldown, the addon retries the NPC poke at most once every **5 seconds**. The loop stops as soon as temporary food appears and never runs during an active feeding transaction. It does not move characters back to Yazuhma: movement remains manual or controlled by another addon. Commands: `//lsup restock on` or `//lsup restock off`. Enabled by default.
+
+The stock scanner must detect temporary items for the retry loop to know when to stop. If the HUD shows `UNKNOWN` or `VERIFY STOCK` while the character actually carries food, turn restocking off until detection is corrected. No in-game runtime or Lua syntax check has been confirmed for this version.
