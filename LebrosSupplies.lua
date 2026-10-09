@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.6.1'
+_addon.version = '0.6.2'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -375,7 +375,7 @@ local function coordinate()
  local priority_pending=stew_group_count()<2
  local assigned={}
  for _,v in ipairs(candidates) do
-  if not assigned[v.worker] then
+  if not assigned[v.worker] and not jobs[v.s.id] then
    -- Explicit player group classification is required for EVERY assignment.
    -- Never spend stewpots on two-soldier groups or inferred group size.
    local stew=v.food=='seafood stewpot'
@@ -407,9 +407,16 @@ local function coordinate()
  end
 end
 local function accept_job(args)
- if leader_name=='' or norm(args[2])~=norm(identity()) then return end
- local job,id,index,food=tonumber(args[3]),tonumber(args[4]),tonumber(args[5]),args[6]
- if not job or not id or not index or not foods[food] or pending_job then return end
+ if leader_name=='' or norm(args[3])~=norm(identity()) then return end
+ local job,id,index,food=tonumber(args[4]),tonumber(args[5]),tonumber(args[6]),args[7]
+ if not job or not id or not index or not foods[food] then
+  log('Rejected malformed feeding assignment.')
+  return
+ end
+ if pending_job then
+  send('fail|'..job..'|'..id..'|worker-busy')
+  return
+ end
  local found=windower.ffxi.get_mob_by_id(id)
  local stock=inventory[norm(identity())] or {}
  local count=0
@@ -417,7 +424,9 @@ local function accept_job(args)
  local range=found and found.distance and math.sqrt(found.distance) or 999
  if not found or found.index~=index or found.name~='Imperial Stormer'
   or range>4.5 or (stock[food] or 0)<1 or count~=1 then
-  send('fail|'..job..'|'..id..'|precondition')
+  local reason=not found and 'npc-not-visible' or (found.index~=index and 'index-mismatch' or (range>4.5 and 'out-of-range' or ((stock[food] or 0)<1 and 'food-not-detected' or 'mixed-food')))
+  log('Feeding blocked NPC '..id..': '..reason)
+  send('fail|'..job..'|'..id..'|'..reason)
   return
  end
  -- Worker receives a single id-scoped command. Do not perform repeats.
