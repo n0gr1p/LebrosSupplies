@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.6.3'
+_addon.version = '0.6.4'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -514,8 +514,13 @@ windower.register_event('ipc message',function(message)
      log('Three-soldier group stewpot deliveries: '..stew_group_count()..'/2')
      if stew_group_count()==2 then log('Stewpot reserve released: two-soldier groups now eligible.') end
     end
-    -- This proves consumption, not satisfaction or AoE group completion.
-    log('Food consumed on NPC '..id..'; satisfaction unconfirmed.')
+    -- Inventory depletion confirms the delivery was accepted. NPC satisfaction
+    -- remains a separate state, but does not hold up subsequent deliveries.
+    local total=(ledger[id] and ledger[id].points) or 0
+    local remaining=math.max(0,7-total)
+    log('Fed NPC '..id..': '..entry.food..' +'..foods[entry.food]..
+      ', total '..total..'/7'..
+      (remaining>0 and ' - continue feeding.' or ' - estimated requirement met.'))
    else entry.state='uncertain'
     log('Assignment '..job..' unresolved on NPC '..id..': '..tostring(a[5]))
    end
