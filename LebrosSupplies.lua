@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.6.2'
+_addon.version = '0.6.3'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -276,11 +276,12 @@ local next_job_id = 1
 local last_report = -100
 local last_schedule = -100
 local seq = 0
+local job_cooldown = {} -- brief per-NPC delay after a confirmed delivery
 local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
 local marked_by = {}
 local stew_groups_fed = {} -- unique 3-soldier spatial groups with confirmed stew consumption
 windower.register_event('zone change',function()
- marked_groups,marked_by,jobs,sightings,stew_groups_fed={}, {}, {}, {}, {}
+ marked_groups,marked_by,jobs,sightings,stew_groups_fed,job_cooldown={}, {}, {}, {}, {}, {}
  pending_job=nil
 end)
 local function norm(x) return tostring(x or ''):lower() end
@@ -315,7 +316,11 @@ local function coordinator_candidates()
     end
     -- If the worker has multiple food types, server selection order is unknown.
     -- Don't silently gamble the scarce temporary provisions.
-    if kinds==1 and marked_groups[s.id] and not jobs[s.id] and s.range<=4.5 then
+    local fed=(ledger[s.id] and ledger[s.id].points) or 0
+    local active=jobs[s.id]
+    local available=not active or (active.state=='completed' and os.clock()-(job_cooldown[s.id] or 0)>=2)
+    if kinds==1 and marked_groups[s.id] and not (soldiers[s.id] and soldiers[s.id].full)
+      and fed<7 and available and s.range<=4.5 then
      candidates[#candidates+1]={worker=worker,s=s,food=n}
     end
    end
@@ -375,7 +380,13 @@ local function coordinate()
  local priority_pending=stew_group_count()<2
  local assigned={}
  for _,v in ipairs(candidates) do
-  if not assigned[v.worker] and not jobs[v.s.id] then
+  local prev=jobs[v.s.id]
+  local ready=not prev or (prev.state=='completed' and os.clock()-(job_cooldown[v.s.id] or 0)>=2)
+  local worker_busy=false
+  for _,job in pairs(jobs) do
+   if job.worker==v.worker and job.state=='assigned' then worker_busy=true;break end
+  end
+  if not assigned[v.worker] and not worker_busy and ready then
    -- Explicit player group classification is required for EVERY assignment.
    -- Never spend stewpots on two-soldier groups or inferred group size.
    local stew=v.food=='seafood stewpot'
@@ -384,7 +395,7 @@ local function coordinate()
    local group_busy=false
    if stew and group_key then
     for _,j in pairs(jobs) do
-     if j.group_key==group_key then group_busy=true break end
+     if j.group_key==group_key and j.state=='assigned' then group_busy=true break end
     end
    end
    local ordinary_blocked=priority_pending and marked_groups[v.s.id]==3 and not stew
@@ -488,6 +499,7 @@ windower.register_event('ipc message',function(message)
   if entry and entry.job==job then
    if a[2]=='consumed' then
     entry.state='completed'
+    job_cooldown[id]=os.clock()
     -- An acknowledged unique job is the only source of automatic ledger points.
     local affected={id}
     if entry.food=='seafood stewpot' and entry.group_key then
