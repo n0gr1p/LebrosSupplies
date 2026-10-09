@@ -1,12 +1,13 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.5.1'
+_addon.version = '0.5.2'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
 local res = require('resources')
 local settings = config.load({radius=6,ui={pos={x=100,y=100},text={font='Arial',size=11,red=255,green=255,blue=255,alpha=255},bg={visible=true,alpha=170,red=0,green=0,blue=0},flags={draggable=true}}})
-local view = texts.new('Lebros Supplies\nKnown: ${known}\nTarget: ${target}\nGroups: ${groups}\nFood: ${food}',settings.ui)
+local view = texts.new('Lebros Supplies\nKnown: ${known}\nTarget: ${target}\nGroups: ${groups}\nFOOD BY CHARACTER\n${food}',settings.ui)
 local soldiers,groups,inventory = {},{},{}
+local stock_seen = {}
 local ledger = {} -- authoritative, event-deduplicated consumption totals by NPC ID
 local applied_events = {}
 local group_marks = {} -- UI's latest player-confirmed target classification
@@ -70,6 +71,7 @@ local function food_scan()
   end
  end
  inventory[identity():lower()]=owned
+ stock_seen[identity():lower()]=os.clock()
  local vals={}
  for f,n in pairs(owned) do vals[#vals+1]=f..'='..n end
  windower.send_ipc_message('lebros|food|'..identity()..'|'..table.concat(vals,','))
@@ -85,10 +87,38 @@ local function draw()
  for key,g in pairs(groups) do gl[#gl+1]=tostring(key)..':'..g.size..(g.valid and '' or '?') end
  table.sort(gl)
  local stock={}
- for who,items in pairs(inventory) do
-  for f,count in pairs(items) do stock[#stock+1]=who..' '..f..' x'..count end
+ local roster,listed={},{}
+ local party=windower.ffxi.get_party() or {}
+ for i=0,5 do
+  local p=party['p'..i]
+  if p and p.name then
+   local name=p.name:lower()
+   if not listed[name] then roster[#roster+1]=name; listed[name]=true end
+  end
  end
- table.sort(stock)
+ for who in pairs(inventory) do
+  if not listed[who] then roster[#roster+1]=who; listed[who]=true end
+ end
+ for _,who in ipairs(roster) do
+  local items=inventory[who]
+  local age=stock_seen[who] and (os.clock()-stock_seen[who]) or math.huge
+  local label
+  if not items or age>8 then label='NO RECENT REPORT'
+  else
+   local entries,total={},0
+   local ordered={'seafood stewpot','bison steak','coeurl sub','bison jerky','pea soup','white bread'}
+   local short={['seafood stewpot']='Stew',['bison steak']='Steak',['coeurl sub']='Sub',['bison jerky']='Jerky',['pea soup']='Soup',['white bread']='Bread'}
+   for _,food in ipairs(ordered) do
+    local count=items[food] or 0
+    if count>0 then
+     total=total+count
+     entries[#entries+1]=short[food]..':'..count
+    end
+   end
+   label=total==0 and 'EMPTY - RESTOCK' or table.concat(entries,'  ')
+  end
+  stock[#stock+1]=who..': '..label
+ end
  local s=selected()
  local target_text='none'
  if s then
@@ -137,6 +167,7 @@ windower.register_event('ipc message',function(message)
   local stock={}
   for f,n in tostring(b):gmatch('([^,=]+)=(%d+)') do if foods[f] then stock[f]=tonumber(n) end end
   inventory[(a or ''):lower()]=stock
+  stock_seen[(a or ''):lower()]=os.clock()
  elseif action=='feedv2' then
   local key,food,ids=message:match('^lebros|feedv2|([^|]+)|([^|]+)|(.+)$')
   local affected={}
@@ -151,7 +182,7 @@ windower.register_event('prerender',function()
  if os.clock()-last>2 then last=os.clock() scan() food_scan() draw() end
 end)
 windower.register_event('zone change',function()
- soldiers,groups,inventory,ledger,applied_events,group_marks={},{},{},{},{},{}
+ soldiers,groups,inventory,ledger,applied_events,group_marks,stock_seen={},{},{},{},{},{},{}
  view:hide()
 end)
 windower.register_event('unload',function() view:hide() end)
