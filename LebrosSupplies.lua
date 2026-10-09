@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.1.0'
+_addon.version = '0.2.0'
 _addon.commands = {'lebrossupplies','lsupply'}
 local texts = require('texts')
 local config = require('config')
@@ -154,4 +154,192 @@ windower.register_event('addon command',function(cmd,...)
   else log('Target a soldier first') end
  else log('//lsupply status|inspect|record <food name>|full|radius <yalms>') end
 end)
-log('Loaded in safe observation mode.')
+log('Coordinator-assisted feeding enabled (one-food-type workers only).')
+
+
+-- Coordinator protocol v0.2.0. Only the coordinator issues assignments.
+-- Each worker reports locally visible soldiers and food. No assumed global mob array.
+local leader_name = ''
+local sightings = {}
+local jobs = {}
+local pending_job = nil
+local next_job_id = 1
+local last_report = -100
+local last_schedule = -100
+local seq = 0
+local function norm(x) return tostring(x or ''):lower() end
+local function who_leads()
+ if leader_name ~= '' then return leader_name end
+ local party=windower.ffxi.get_party() or {}
+ local p=party.p0
+ return p and norm(p.name) or norm(identity())
+end
+local function is_coordinator() return norm(identity())==who_leads() end
+local function send(s) windower.send_ipc_message('lebrosc|'..s) end
+local function report_visible()
+ local lines={}
+ local mob=windower.ffxi.get_mob_array() or {}
+ for _,m in pairs(mob) do
+  if m and m.name=='Imperial Stormer' and m.id and m.index and m.x and m.y and m.z and m.valid_target then
+   local d=m.distance and math.sqrt(m.distance) or 999
+   if d<=40 then
+    lines[#lines+1]=table.concat({m.id,m.index,('%.1f'):format(d),
+     ('%.2f'):format(m.x),('%.2f'):format(m.y),('%.2f'):format(m.z)},',')
+   end
+  end
+ end
+ send('sight|'..identity()..'|'..table.concat(lines,';'))
+end
+local function coordinator_candidates()
+ local candidates={}
+ for worker,snap in pairs(sightings) do
+  if os.clock()-snap.time<5 and worker~=who_leads() then
+   for _,s in pairs(snap.mobs) do
+    local stock=inventory[worker] or {}
+    local kinds,n=0,nil
+    for food,amount in pairs(stock) do
+     if amount>0 then kinds=kinds+1 n=food end
+    end
+    -- If the worker has multiple food types, server selection order is unknown.
+    -- Don't silently gamble the scarce temporary provisions.
+    if kinds==1 and not jobs[s.id] and s.range<=4.5 then
+     candidates[#candidates+1]={worker=worker,s=s,food=n}
+    end
+   end
+  end
+ end
+ return candidates
+end
+local function group_size_at(s)
+ local seen={}
+ for _,snap in pairs(sightings) do
+  if os.clock()-snap.time<5 then
+   for id,m in pairs(snap.mobs) do seen[id]=m end
+  end
+ end
+ local n=0
+ for _,m in pairs(seen) do
+  local dx,dy,dz=m.x-s.x,m.y-s.y,m.z-s.z
+  if dx*dx+dy*dy+dz*dz<=settings.radius*settings.radius then n=n+1 end
+ end
+ return n
+end
+local function coordinate()
+ if not is_coordinator() then return end
+ local candidates=coordinator_candidates()
+ table.sort(candidates,function(a,b)
+  local aa=(a.food=='seafood stewpot' and group_size_at(a.s)==3) and 100 or 0
+  local bb=(b.food=='seafood stewpot' and group_size_at(b.s)==3) and 100 or 0
+  if aa~=bb then return aa>bb end
+  return a.s.range<b.s.range
+ end)
+ local assigned={}
+ for _,v in ipairs(candidates) do
+  if not assigned[v.worker] then
+   local group=group_size_at(v.s)
+   -- Stewpots are strictly reserved for fully observed three-soldier clusters.
+   if v.food~='seafood stewpot' or group==3 then
+    local id=next_job_id next_job_id=next_job_id+1
+    jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned'}
+    assigned[v.worker]=true
+    send(table.concat({'assign',v.worker,id,v.s.id,v.s.index,v.food},'|'))
+    log('Assign '..v.worker..' -> NPC '..v.s.id..' ('..v.food..')')
+   end
+  end
+ end
+ for id,j in pairs(jobs) do
+  if os.clock()-j.time>12 and j.state~='completed' then
+   -- Timed-out transactions are NOT retried automatically; server outcome unknown.
+   j.state='uncertain'
+  end
+ end
+end
+local function accept_job(args)
+ if norm(args[2])~=norm(identity()) then return end
+ local job,id,index,food=tonumber(args[3]),tonumber(args[4]),tonumber(args[5]),args[6]
+ if not job or not id or not index or not foods[food] or pending_job then return end
+ local found=windower.ffxi.get_mob_by_id(id)
+ local stock=inventory[norm(identity())] or {}
+ local count=0
+ for _,amount in pairs(stock) do if amount>0 then count=count+1 end end
+ local range=found and found.distance and math.sqrt(found.distance) or 999
+ if not found or found.index~=index or found.name~='Imperial Stormer'
+  or range>4.5 or (stock[food] or 0)<1 or count~=1 then
+  send('fail|'..job..'|'..id..'|precondition')
+  return
+ end
+ -- Worker receives a single id-scoped command. Do not perform repeats.
+ pending_job={job=job,id=id,food=food,before=stock[food],time=os.clock(),state='sent'}
+ local ok, pk=pcall(require,'packets')
+ if not ok then send('fail|'..job..'|'..id..'|no-packets') pending_job=nil return end
+ pk.inject(pk.new('outgoing',0x01A,{
+  ['Target']=id,['Target Index']=index,['Category']=0,['Param']=0
+ }))
+ log('Coordinator requested interaction with '..id..' ('..food..')')
+end
+local function check_pending()
+ if not pending_job then return end
+ local j=pending_job
+ if os.clock()-j.time<1.5 then return end
+ local count=(inventory[norm(identity())] or {})[j.food] or 0
+ if count<j.before then
+  send('consumed|'..j.job..'|'..j.id..'|'..j.food)
+  log('Confirmed food consumption for NPC '..j.id..'.')
+  pending_job=nil
+ elseif os.clock()-j.time>5 then
+  send('fail|'..j.job..'|'..j.id..'|no-inventory-change')
+  log('No confirmed consumption; not retrying automatically.')
+  pending_job=nil
+ end
+end
+windower.register_event('ipc message',function(message)
+ if type(message)~='string' or message:sub(1,8)~='lebrosc|' then return end
+ local a={}
+ for v in message:gmatch('[^|]+') do a[#a+1]=v end
+ if a[2]=='leader' then leader_name=norm(a[3])
+ elseif a[2]=='sight' and a[3] then
+  local mobs={}
+  for entry in tostring(a[4] or ''):gmatch('[^;]+') do
+   local id,idx,dist,x,y,z=entry:match('^(%d+),(%d+),([%d.]+),([%d.-]+),([%d.-]+),([%d.-]+)$')
+   if id then
+    id=tonumber(id)
+    mobs[id]={id=id,index=tonumber(idx),range=tonumber(dist),
+     x=tonumber(x),y=tonumber(y),z=tonumber(z)}
+   end
+  end
+  sightings[norm(a[3])]={time=os.clock(),mobs=mobs}
+ elseif a[2]=='assign' then accept_job(a)
+ elseif (a[2]=='consumed' or a[2]=='fail') and is_coordinator() then
+  local job,id=tonumber(a[3]),tonumber(a[4])
+  local entry=id and jobs[id]
+  if entry and entry.job==job then
+   if a[2]=='consumed' then
+    entry.state='completed'
+    -- This proves consumption, not satisfaction or AoE group completion.
+    log('Food consumed on NPC '..id..'; satisfaction unconfirmed.')
+   else entry.state='uncertain'
+    log('Assignment '..job..' unresolved on NPC '..id..': '..tostring(a[5]))
+   end
+  end
+ end
+end)
+windower.register_event('prerender',function()
+ local t=os.clock()
+ if t-last_report>1 then
+  last_report=t
+  report_visible()
+  check_pending()
+ end
+ if t-last_schedule>2 then last_schedule=t coordinate() end
+end)
+windower.register_event('addon command',function(cmd,name)
+ if cmd=='coordinator' then
+  if not name or name=='' then log('Usage: //lsupply coordinator <character|auto>') return end
+  leader_name=name=='auto' and '' or norm(name)
+  send('leader|'..leader_name)
+  log('Coordinator '..who_leads())
+ elseif cmd=='plan' then
+  log('Coordinator: '..who_leads()..' | active worker assignments:')
+  for id,j in pairs(jobs) do log(id..' -> '..j.worker..' ('..j.state..')') end
+ end
+end)
