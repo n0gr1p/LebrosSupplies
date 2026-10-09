@@ -96,3 +96,7 @@ After a worker confirms that food was consumed, the coordinator releases that so
 The addon automatically requests provisions from **Yazuhma** when a character returns within 4.5 yalms carrying no recognized food. If Yazuhma is still on her dispense cooldown, the addon retries the NPC poke at most once every **5 seconds**. The loop stops as soon as temporary food appears and never runs during an active feeding transaction. It does not move characters back to Yazuhma: movement remains manual or controlled by another addon. Commands: `//lsup restock on` or `//lsup restock off`. Enabled by default.
 
 The stock scanner must detect temporary items for the retry loop to know when to stop. If the HUD shows `UNKNOWN` or `VERIFY STOCK` while the character actually carries food, turn restocking off until detection is corrected. No in-game runtime or Lua syntax check has been confirmed for this version.
+
+### Solo soldier classification (v0.7.1)
+
+Target a lone Imperial Stormer and enter `//lsup 1` to mark that exact NPC server ID as a **solo soldier**. Like `//lsup 2` and `//lsup 3`, this is sent to the coordinator over IPC and displayed as `GROUP 1` in the target HUD. Solo soldiers receive ordinary food while the two three-soldier stewpot reservations remain outstanding. Once both priority three-person groups have consumed stewpots, remaining stewpots may also be used on solo soldiers. The food-point ledger and retry rules remain per soldier.
