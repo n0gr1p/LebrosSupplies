@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.7.2'
+_addon.version = '0.7.3'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -374,10 +374,16 @@ local function coordinate()
   if aa~=bb then return aa>bb end
   return a.s.range<b.s.range
  end)
- -- Reserve every marked three-soldier group for stewpot delivery while
- -- either priority group remains. Do not spend ordinary food on those groups
- -- merely because its carrier is closer than the stewpot carrier.
+ -- Stewpot-first is a preference, not a gate. Only prefer it when a
+ -- usable stewpot carrier is actually present in the current candidates.
  local priority_pending=stew_group_count()<2
+ local stew_available={}
+ for _,candidate in ipairs(candidates) do
+  if candidate.food=='seafood stewpot' and marked_groups[candidate.s.id]==3 then
+   local key=three_group_key(candidate.s)
+   if key and not stew_groups_fed[key] then stew_available[key]=true end
+  end
+ end
  local assigned={}
  for _,v in ipairs(candidates) do
   local prev=jobs[v.s.id]
@@ -398,9 +404,14 @@ local function coordinate()
      if j.group_key==group_key and j.state=='assigned' then group_busy=true break end
     end
    end
-   local ordinary_blocked=priority_pending and marked_groups[v.s.id]==3 and not stew
-   local permitted=(not stew and not ordinary_blocked) or (priority_done and (marked_groups[v.s.id]==1 or marked_groups[v.s.id]==2))
-     or (not priority_done and marked_groups[v.s.id]==3 and group_key and not stew_groups_fed[group_key])
+   local ordinary_blocked=false
+   if not stew and marked_groups[v.s.id]==3 then
+    local key=three_group_key(v.s)
+    ordinary_blocked=key~=nil and stew_available[key]==true
+   end
+   local permitted=(not stew and not ordinary_blocked)
+     or (stew and priority_done and (marked_groups[v.s.id]==1 or marked_groups[v.s.id]==2))
+     or (stew and not priority_done and marked_groups[v.s.id]==3 and group_key and not stew_groups_fed[group_key])
    if marked_groups[v.s.id] and permitted and not group_busy then
     local id=next_job_id next_job_id=next_job_id+1
     jobs[v.s.id]={worker=v.worker,job=id,time=os.clock(),state='assigned',food=v.food,group_key=group_key}
