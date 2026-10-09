@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.4.0'
+_addon.version = '0.4.1'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -165,7 +165,6 @@ local jobs = {}
 local pending_job = nil
 local next_job_id = 1
 local last_report = -100
-local accept_option = 0 -- default acknowledgement; configurable after in-game validation
 local last_schedule = -100
 local seq = 0
 local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
@@ -313,7 +312,7 @@ local function accept_job(args)
   return
  end
  -- Worker receives a single id-scoped command. Do not perform repeats.
- pending_job={job=job,id=id,index=index,food=food,before=stock[food],time=os.clock(),state='sent'}
+ pending_job={job=job,id=id,index=index,food=food,before=stock[food],time=os.clock(),state='waiting_for_consumption'}
  local ok, pk=pcall(require,'packets')
  if not ok then send('fail|'..job..'|'..id..'|no-packets') pending_job=nil return end
  pk.inject(pk.new('outgoing',0x01A,{
@@ -321,42 +320,6 @@ local function accept_job(args)
  }))
  log('Coordinator requested interaction with '..id..' ('..food..')')
 end
--- Respond exclusively to an NPC menu sent by the exact assigned soldier.
--- One menu, one response; never accept menus after the job has timed out.
-windower.register_event('incoming chunk',function(id,data)
- if not pending_job or pending_job.state~='sent' then return end
- if id~=0x032 and id~=0x033 and id~=0x034 then return end
- if os.clock()-pending_job.time>4 then return end
- local ok,p=pcall(function() return require('packets').parse('incoming',data) end)
- if not ok or not p or tonumber(p['NPC'])~=pending_job.id then return end
- local index=tonumber(p['NPC Index'])
- if index and index~=pending_job.index then return end
- local menu=tonumber(p['Menu ID'])
- local zone=tonumber(p['Zone'])
- if not menu or not zone then return end
- local job=pending_job
- job.state='accepted'
- local sent,why=pcall(function()
-  local pk=require('packets')
-  pk.inject(pk.new('outgoing',0x05B,{
-   ['Target']=job.id,
-   ['Target Index']=job.index,
-   ['Option Index']=accept_option,
-   ['_unknown1']=0,
-   ['Automated Message']=false,
-   ['Zone']=zone,
-   ['Menu ID']=menu
-  }))
- end)
- if not sent then
-  send('fail|'..job.job..'|'..job.id..'|menu-response')
-  log('Menu response failed: '..tostring(why))
-  pending_job=nil
- else
-  log('Accepted NPC dialogue for '..job.id..' (option '..accept_option..').')
- end
-end)
-
 local function check_pending()
  if not pending_job then return end
  local j=pending_job
@@ -441,11 +404,6 @@ windower.register_event('addon command',function(cmd,name)
   leader_name=name=='auto' and '' or norm(name)
   send('leader|'..leader_name)
   log('Coordinator '..who_leads())
- elseif cmd=='option' then
-  local n=tonumber(name)
-  if not n or n<0 or n>255 or n~=math.floor(n) then
-   log('Usage: //lsup option <0-255> (NPC accept option; default 0)')
-  else accept_option=n; log('NPC acceptance option set to '..n..' for this client.') end
  elseif cmd=='plan' then
   log('Coordinator: '..who_leads()..' | 3-group stewpots '..stew_group_count()..'/2 | unlocked='..tostring(stew_group_count()>=2))
   for id,size in pairs(marked_groups) do log(id..' -> '..size..'-soldier group ('..tostring(marked_by[id])..')') end
