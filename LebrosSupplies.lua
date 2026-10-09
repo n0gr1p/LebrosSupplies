@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.5.3'
+_addon.version = '0.5.4'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -170,8 +170,18 @@ windower.register_event('ipc message',function(message)
  local action,a,b=message:match('^lebros|([^|]+)|([^|]*)|?(.*)$')
  if action=='food' then
   local stock={}
-  for f,n in tostring(b):gmatch('([^,=]+)=(%d+)') do if foods[f] then stock[f]=tonumber(n) end end
-  local capable,raw=b:match('^([01])|(.*)
+  local capable,raw=tostring(b or ''):match('^([01])|(.*)$')
+  if capable then
+   stock_known[(a or ''):lower()]=capable=='1'
+  else
+   raw=tostring(b or '')
+   stock_known[(a or ''):lower()]=true
+  end
+  for f,n in tostring(raw):gmatch('([^,=]+)=(%d+)') do
+   if foods[f] then stock[f]=tonumber(n) end
+  end
+  inventory[(a or ''):lower()]=stock
+  stock_seen[(a or ''):lower()]=os.clock()
  elseif action=='feedv2' then
   local key,food,ids=message:match('^lebros|feedv2|([^|]+)|([^|]+)|(.+)$')
   local affected={}
