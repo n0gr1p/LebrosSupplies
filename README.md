@@ -71,10 +71,14 @@ An Imperial Stormer does **not** open a choice menu. The assigned worker sends o
 
 The feeding code has not yet been live-tested. In particular, the temporary-item container exposed by the client's Windower build still needs to be verified during normal play.
 
-### Party-wide food HUD (v0.5.3)
+### Party-wide food HUD (v0.6.0)
 
 The HUD shows each party member individually in party order, including the coordinator. Stock reports refresh via IPC. Each row lists held food types and quantities, **EMPTY - RESTOCK** for a recent report with no recognized temporary provisions, or **NO RECENT REPORT** when a member has not reported in eight seconds (including newly loaded clients). This distinguishes zero food from missing telemetry. Group and target progress remain visible above the food rows. Item visibility depends on the Windower temporary-item API; unrecognized temporary food can falsely appear as empty and needs an in-game check.
 
-### Compact HUD (v0.5.3)
+### Compact HUD (v0.6.0)
 
 One line per player in party order. Blank cluster lines are suppressed, and supplies appear vertically beneath the current target. `OFFLINE / STALE` means no recent IPC stock report. `TEMP ITEMS UNKNOWN` means the client's `get_items().temporary` container is not exposed as a table. `RESTOCK / VERIFY` means the container was readable but no food names matched; confirm item detection before assuming it is empty. This is deliberately different from claiming an unverified empty scan means no food.
+
+### Windower HUD layout (v0.6.0)
+
+The in-game layout uses **three Windower `texts` objects**, not one giant concatenated string: a header/target panel, a left-aligned character-name column, and a right-aligned provision-status column. Six clients appear on six separate rows. Target group status (`UNMARKED`, `GROUP 2`, `GROUP 3`) and accumulated feeding value appear above the inventory rows. This is a native text-object approximation, not an HTML-style card; actual font spacing and layering need in-game confirmation.
