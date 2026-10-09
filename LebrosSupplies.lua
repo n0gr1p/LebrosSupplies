@@ -1,5 +1,5 @@
 _addon.name = 'LebrosSupplies'
-_addon.version = '0.6.0'
+_addon.version = '0.6.1'
 _addon.commands = {'lebrossupplies','lsupply','lsup'}
 local texts = require('texts')
 local config = require('config')
@@ -15,8 +15,29 @@ end
 local origin_x=settings.ui.pos.x or 100
 local origin_y=settings.ui.pos.y or 100
 local panel=texts.new('',style(origin_x,origin_y,11,233,240,252,true))
+panel:draggable(true)
 local names=texts.new('',style(origin_x+12,origin_y+124,10,210,223,240,false))
 local amounts=texts.new('',style(origin_x+172,origin_y+124,10,143,219,192,false))
+-- The header is the only drag handle; keep the two text columns attached.
+local function sync_columns(x,y)
+ names:pos(x+12,y+124)
+ amounts:pos(x+172,y+124)
+end
+texts.register_event(panel,'drag',function(_,x,y)
+ sync_columns(x,y)
+end)
+local saved_x,saved_y=origin_x,origin_y
+local function save_panel_position()
+ local x,y=panel:pos()
+ if x~=saved_x or y~=saved_y then
+  settings.ui.pos.x,settings.ui.pos.y=x,y
+  config.save(settings)
+  saved_x,saved_y=x,y
+ end
+end
+windower.register_event('mouse',function(kind)
+ if kind==2 then save_panel_position() end
+end)
 local function hide_hud() panel:hide();names:hide();amounts:hide() end
 
 local soldiers,groups,inventory = {},{},{}
