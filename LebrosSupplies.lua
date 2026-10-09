@@ -169,6 +169,10 @@ local last_schedule = -100
 local seq = 0
 local marked_groups = {} -- soldier server ID -> player-confirmed group size (2 or 3)
 local marked_by = {}
+windower.register_event('zone change',function()
+ marked_groups,marked_by,jobs,sightings={}, {}, {}, {}
+ pending_job=nil
+end)
 local function norm(x) return tostring(x or ''):lower() end
 local function who_leads()
  return leader_name
