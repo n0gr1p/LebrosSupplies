@@ -1,44 +1,49 @@
 # LebrosSupplies (Windower 4)
 
-Initial **v0.1.0 observation build** for the *Lebros Supplies* Assault. Load `LebrosSupplies.lua` on every participating character.
+**v0.2.0 — single-coordinator feeding prototype**
 
-## What works
+All six clients load the addon. One explicitly named character coordinates; other clients report sightings and food stock and execute only addressed feeding jobs.
 
-- Scans nearby `Imperial Stormer` entities, retaining each distinct server ID.
-- Recomputes **provisional** nearby soldier groups from x/y/z Euclidean distances (default 6 yalms).
-- Marks clusters containing 2 or 3 NPCs as possible groups; highlights three-member groups as stewpot priority.
-- Scans available Windower temporary-item records for six known provision types; broadcasts observations through Windower IPC.
-- Displays a small draggable HUD with soldiers seen, provisional clusters, current targeted ID/estimated points, and shared food observations.
-- Provides manual bookkeeping commands synchronized across clients.
+## In-game setup
+
+```text
+//send @all lua r LebrosSupplies
+//lsupply coordinator Terrasjr
+//lsupply plan
+//lsupply status
+```
+
+Replace Terrasjr with whichever character you want coordinating. **Coordinator selection is mandatory** and broadcasts via IPC; no automatic leader inference. The coordinator can be any party member. Reloading all clients requires selecting it again.
+
+## Operation
+
+Each client reports nearby Imperial Stormer **server IDs, indices, positions, distances**, plus temporary food observations. The coordinator merges reports, estimates spatial groups using a configurable radius (default 6 yalms), and assigns one NPC interaction to an in-range worker. A Seafood Stewpot is reserved for a fully observed **three-soldier** cluster. The worker checks the exact mob ID/index, range, and its available food before issuing one interaction packet. It waits for inventory depletion and reports confirmed consumption; the coordinator does not automatically retry unresolved jobs.
+
+**Important limitation:** An actual food consumption is not proof that a soldier is fully satisfied, nor that nearby soldiers received stewpot credit. Spatial clusters are provisional. Initial automatic feeding is limited to characters carrying **one food type**; with mixed provision types, it intentionally does not guess what the server will consume. We still need to validate actual Windower temporary-food visibility and packet interaction on a live run. This is an incremental implementation, not a proven unattended clear.
 
 ## Commands
 
 ```text
-//lua load LebrosSupplies
+//lsupply coordinator <character>
+//lsupply coordinator auto     # disable coordinator / automatic assignments
+//lsupply plan                 # inspect coordinator job states
 //lsupply status
 //lsupply inspect
 //lsupply radius 6
 //lsupply record seafood stewpot
-//lsupply record bison steak
-//lsupply record coeurl sub
-//lsupply record bison jerky
-//lsupply record pea soup
-//lsupply record white bread
 //lsupply full
 ```
 
-`record` adds **estimated** points to the currently targeted soldier. For a stewpot, it applies to all soldiers in that observed 2- or 3-member cluster. `full` manually marks the currently selected soldier confirmed satisfied after checking NPC dialogue.
+The last two bookkeeping commands remain manual for confirmed dialogue. Use `record` only for a known successful feeding, and `full` only after confirmed satisfaction.
 
-## Why automatic feeding is NOT enabled yet
+## Safety
 
-Talking to an Imperial Stormer automatically consumes whatever eligible temporary food the character carries. Until actual food-selection behavior and exact confirmation messages are verified, automatic interactions can waste limited supplies. V0.1.0 **does not automatically interact, feed, trade, or spend items**.
+- All clients must use the same addon version.
+- Do not run simultaneous competing NPC automation.
+- No automatic retry when transaction outcome is unknown.
+- The coordinator never sends blanket broadcast feeding commands.
+- IPC assignment is scoped to one character, one mob ID/index, one food type, and one job number.
+- If the temporary-item scanner cannot see your food, the coordinator cannot schedule its consumption.
+- Unknown server food-selection behavior is a hard stop for mixed inventories.
 
-Spatial clusters are only hypotheses: incomplete mob-array visibility, floors, close adjacent groups, or unusual spacing can misclassify membership. Do not interpret a cluster as proof of the server's actual stewpot AoE group. Any `record` call is manually asserted bookkeeping, not an observed transaction. Temporary item structure may vary; if food is not detected, compare Windower's inventory records.
-
-## Planned next iteration
-
-Capture actual NPC dialogue and before/after food inventory changes on successful delivery, then introduce a transactional feeding scheduler with one pending interaction at a time, IPC claim locks, ID-specific confirmation, and explicit group-completion validation.
-
-Mission references:
-- https://www.bg-wiki.com/ffxi/Lebros_Supplies
-- https://wikiwiki.jp/ffxi/%E3%82%A2%E3%83%88%E3%83%AB%E3%82%AC%E3%83%B3%E3%81%AE%E7%A7%98%E5%AE%9D/%E3%82%A2%E3%82%B5%E3%83%AB%E3%83%88/%E3%83%AC%E3%83%99%E3%83%AD%E3%82%B9%E9%A2%A8%E7%A9%B4
+Code: `LebrosSupplies.lua`.
